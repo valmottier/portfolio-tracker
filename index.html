@@ -966,28 +966,63 @@
 // ============================================================
 // STATE
 // ============================================================
-let portfolio = JSON.parse(localStorage.getItem('portfolio') || '[]');
-let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
-let history = JSON.parse(localStorage.getItem('aiHistory') || '[]');
+let portfolio = [];
+let watchlist = [];
+let history = [];
 let prices = {};
-let fxRates = { USDCHF: 1, EURCHF: 1 }; // taux de change, mis à jour au chargement
+let fxRates = { USDCHF: 1, EURCHF: 1 };
+
+// ============================================================
+// STOCKAGE PERSISTANT (synchronise sur tous tes appareils)
+// ============================================================
+async function saveData(key, value) {
+  try {
+    await window.storage.set(key, JSON.stringify(value), false);
+  } catch(e) {
+    console.warn('Erreur sauvegarde:', e);
+  }
+}
+
+async function loadData(key) {
+  try {
+    const result = await window.storage.get(key, false);
+    return result ? JSON.parse(result.value) : null;
+  } catch(e) {
+    return null;
+  }
+}
+
+async function loadAllData() {
+  const [p, w, h, c] = await Promise.all([
+    loadData('portfolio'),
+    loadData('watchlist'),
+    loadData('aiHistory'),
+    loadData('config')
+  ]);
+  if (p) portfolio = p;
+  if (w) watchlist = w;
+  if (h) history = h;
+  if (c) _config = c;
+}
+
+let _config = {};
 
 function getConfig() {
   return {
-    finnhubKey: localStorage.getItem('finnhubKey') || '',
-    anthropicKey: localStorage.getItem('anthropicKey') || '',
-    currency: localStorage.getItem('currency') || 'CHF',
-    riskProfile: localStorage.getItem('riskProfile') || 'equilibre',
-    monthlyBudget: localStorage.getItem('monthlyBudget') || '300',
-    horizon: localStorage.getItem('horizon') || 'long',
-    broker: localStorage.getItem('broker') || 'UBS',
-    fixedFees: localStorage.getItem('fixedFees') || '9',
-    varFees: localStorage.getItem('varFees') || '0.5',
-    fxFees: localStorage.getItem('fxFees') || '1.5',
-    objective: localStorage.getItem('objective') || 'mixte',
-    favSectors: localStorage.getItem('favSectors') || '',
-    avoidSectors: localStorage.getItem('avoidSectors') || '',
-    stopLoss: localStorage.getItem('stopLoss') || '15',
+    finnhubKey: _config.finnhubKey || '',
+    anthropicKey: _config.anthropicKey || '',
+    currency: _config.currency || 'CHF',
+    riskProfile: _config.riskProfile || 'equilibre',
+    monthlyBudget: _config.monthlyBudget || '300',
+    horizon: _config.horizon || 'long',
+    broker: _config.broker || 'UBS',
+    fixedFees: _config.fixedFees || '9',
+    varFees: _config.varFees || '0.5',
+    fxFees: _config.fxFees || '1.5',
+    objective: _config.objective || 'mixte',
+    favSectors: _config.favSectors || '',
+    avoidSectors: _config.avoidSectors || '',
+    stopLoss: _config.stopLoss || '15',
   };
 }
 
@@ -1025,23 +1060,29 @@ function loadSettingsForm() {
 }
 
 function saveKeys() {
-  localStorage.setItem('finnhubKey', document.getElementById('finnhubKey').value.trim());
-  localStorage.setItem('anthropicKey', document.getElementById('anthropicKey').value.trim());
+  const config = getConfig();
+  config.finnhubKey = document.getElementById('finnhubKey').value.trim();
+  config.anthropicKey = document.getElementById('anthropicKey').value.trim();
+  saveData('config', config);
   showBanner('keysBanner');
   checkSettingsBanner();
 }
 
 function saveProfile() {
+  const config = getConfig();
   ['currency','riskProfile','monthlyBudget','horizon','broker','fixedFees','varFees','fxFees'].forEach(k => {
-    localStorage.setItem(k, document.getElementById(k).value);
+    config[k] = document.getElementById(k).value;
   });
+  saveData('config', config);
   showBanner('profileBanner');
 }
 
 function saveStrategy() {
+  const config = getConfig();
   ['objective','favSectors','avoidSectors','stopLoss'].forEach(k => {
-    localStorage.setItem(k, document.getElementById(k).value);
+    config[k] = document.getElementById(k).value;
   });
+  saveData('config', config);
   showBanner('strategyBanner');
 }
 
@@ -1124,7 +1165,7 @@ function removeFromPortfolio(id) {
 }
 
 function savePortfolio() {
-  localStorage.setItem('portfolio', JSON.stringify(portfolio));
+  saveData('portfolio', portfolio);
 }
 
 function renderPortfolio() {
@@ -1197,7 +1238,7 @@ function removeFromWatchlist(id) {
 }
 
 function saveWatchlist() {
-  localStorage.setItem('watchlist', JSON.stringify(watchlist));
+  saveData('watchlist', watchlist);
 }
 
 function renderWatchlist() {
@@ -1532,7 +1573,7 @@ async function askQuestion() {
     // Save to history
     history.unshift({ date: new Date().toLocaleString('fr-CH'), question, answer });
     if (history.length > 10) history.pop();
-    localStorage.setItem('aiHistory', JSON.stringify(history));
+    saveData('aiHistory', history);
     renderHistory();
 
   } catch(e) {
@@ -1556,20 +1597,30 @@ function renderHistory() {
 
 function clearHistory() {
   history = [];
-  localStorage.setItem('aiHistory', JSON.stringify(history));
+  saveData('aiHistory', history);
   renderHistory();
 }
 
 // ============================================================
 // INIT
 // ============================================================
-function init() {
+async function init() {
+  // Affiche un indicateur de chargement
+  document.getElementById('lastUpdate').textContent = 'Chargement de tes données…';
+
+  // Charge toutes les données depuis le stockage persistant
+  await loadAllData();
+
+  // Met à jour l'interface
   checkSettingsBanner();
   loadSettingsForm();
   renderPortfolio();
   renderWatchlist();
   renderHistory();
-  fetchFxRates().then(() => refreshPrices());
+
+  // Récupère les taux de change et les prix
+  await fetchFxRates();
+  await refreshPrices();
 }
 
 init();
