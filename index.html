@@ -1001,30 +1001,34 @@ function getJsonBinConfig() {
 async function saveAllData() {
   const { binId, apiKey } = getJsonBinConfig();
   if (!binId || !apiKey) {
-    // Fallback localStorage si JSONBin pas configuré
+    console.warn('JSONBin non configuré — sauvegarde locale uniquement');
     localStorage.setItem('portfolio', JSON.stringify(portfolio));
     localStorage.setItem('watchlist', JSON.stringify(watchlist));
     localStorage.setItem('aiHistory', JSON.stringify(history));
     return;
   }
   try {
-    await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+    const payload = { portfolio, watchlist, history, config: _config };
+    console.log('Sauvegarde JSONBin...', payload);
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'X-Master-Key': apiKey
       },
-      body: JSON.stringify({ portfolio, watchlist, history, config: _config })
+      body: JSON.stringify(payload)
     });
+    const data = await res.json();
+    console.log('Réponse JSONBin save:', data);
   } catch(e) {
-    console.warn('Erreur sauvegarde JSONBin:', e);
+    console.error('Erreur sauvegarde JSONBin:', e);
   }
 }
 
 async function loadAllData() {
   const { binId, apiKey } = getJsonBinConfig();
   if (!binId || !apiKey) {
-    // Fallback localStorage
+    console.warn('JSONBin non configuré — chargement local');
     const p = localStorage.getItem('portfolio');
     const w = localStorage.getItem('watchlist');
     const h = localStorage.getItem('aiHistory');
@@ -1036,18 +1040,23 @@ async function loadAllData() {
     return;
   }
   try {
+    console.log('Chargement JSONBin...');
     const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
       headers: { 'X-Master-Key': apiKey }
     });
     const data = await res.json();
+    console.log('Réponse JSONBin load:', data);
     if (data.record) {
       if (data.record.portfolio) portfolio = data.record.portfolio;
       if (data.record.watchlist) watchlist = data.record.watchlist;
       if (data.record.history) history = data.record.history;
       if (data.record.config) _config = data.record.config;
+      console.log('Données chargées — portfolio:', portfolio.length, 'actifs');
+    } else {
+      console.warn('Pas de record dans la réponse JSONBin:', data);
     }
   } catch(e) {
-    console.warn('Erreur chargement JSONBin:', e);
+    console.error('Erreur chargement JSONBin:', e);
   }
 }
 
