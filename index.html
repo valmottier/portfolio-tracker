@@ -1014,7 +1014,7 @@ async function saveAllData() {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
-        'X-Master-Key': apiKey
+        'X-Access-Key': apiKey
       },
       body: JSON.stringify(payload)
     });
@@ -1042,7 +1042,7 @@ async function loadAllData() {
   try {
     console.log('Chargement JSONBin...');
     const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
-      headers: { 'X-Master-Key': apiKey }
+      headers: { 'X-Access-Key': apiKey }
     });
     const data = await res.json();
     console.log('Réponse JSONBin load:', data);
