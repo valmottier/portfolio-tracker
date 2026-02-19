@@ -970,6 +970,7 @@ let portfolio = JSON.parse(localStorage.getItem('portfolio') || '[]');
 let watchlist = JSON.parse(localStorage.getItem('watchlist') || '[]');
 let history = JSON.parse(localStorage.getItem('aiHistory') || '[]');
 let prices = {};
+let fxRates = { USDCHF: 1, EURCHF: 1 }; // taux de change, mis à jour au chargement
 
 function getConfig() {
   return {
@@ -1135,7 +1136,8 @@ function renderPortfolio() {
 
   tbody.innerHTML = portfolio.map(asset => {
     const price = prices[asset.symbol];
-    const currentPrice = price ? price.c : null;
+    const currentPriceRaw = price ? price.c : null;
+    const currentPrice = currentPriceRaw ? getPriceInCHF(asset.symbol, currentPriceRaw) : null;
     const change = price ? price.dp : null;
     const value = currentPrice ? currentPrice * asset.qty : null;
     const pnl = currentPrice ? (currentPrice - asset.buyPrice) * asset.qty : null;
@@ -1207,7 +1209,8 @@ function renderWatchlist() {
 
   tbody.innerHTML = watchlist.map(asset => {
     const price = prices[asset.symbol];
-    const currentPrice = price ? price.c : null;
+    const currentPriceRaw = price ? price.c : null;
+    const currentPrice = currentPriceRaw ? getPriceInCHF(asset.symbol, currentPriceRaw) : null;
     const change = price ? price.dp : null;
 
     const changeHTML = change !== null
@@ -1250,7 +1253,37 @@ async function fetchPricesFor(symbols) {
   document.getElementById('lastUpdate').textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-CH', {hour:'2-digit',minute:'2-digit'});
 }
 
+async function fetchFxRates() {
+  const { finnhubKey } = getConfig();
+  if (!finnhubKey) return;
+  try {
+    const [usdchf, eurchf] = await Promise.all([
+      fetch(`https://finnhub.io/api/v1/quote?symbol=OANDA:USD_CHF&token=${finnhubKey}`).then(r => r.json()),
+      fetch(`https://finnhub.io/api/v1/quote?symbol=OANDA:EUR_CHF&token=${finnhubKey}`).then(r => r.json())
+    ]);
+    if (usdchf.c && usdchf.c > 0) fxRates.USDCHF = usdchf.c;
+    if (eurchf.c && eurchf.c > 0) fxRates.EURCHF = eurchf.c;
+
+    // Afficher le taux dans le header
+    document.getElementById('lastUpdate').textContent =
+      `1 USD = ${fxRates.USDCHF.toFixed(4)} CHF · Mis à jour ${new Date().toLocaleTimeString('fr-CH', {hour:'2-digit',minute:'2-digit'})}`;
+  } catch(e) {
+    console.warn('Impossible de récupérer les taux de change', e);
+  }
+}
+
+// Détermine si un symbole est en USD et doit être converti
+function getPriceInCHF(symbol, priceUSD) {
+  const asset = [...portfolio, ...watchlist].find(a => a.symbol === symbol);
+  if (!asset) return priceUSD;
+  // Les cryptos et actions US sont en USD → conversion
+  if (asset.type === 'crypto') return priceUSD * fxRates.USDCHF;
+  if (asset.type === 'action' && !symbol.includes('.')) return priceUSD * fxRates.USDCHF; // actions sans suffixe = US
+  return priceUSD; // ETF européens, matières premières, forex → on garde tel quel
+}
+
 async function refreshPrices() {
+  await fetchFxRates();
   const allSymbols = [...new Set([...portfolio.map(a => a.symbol), ...watchlist.map(a => a.symbol)])];
   if (allSymbols.length > 0) await fetchPricesFor(allSymbols);
 }
@@ -1261,7 +1294,7 @@ async function refreshPrices() {
 function updateSummary() {
   const valued = portfolio.filter(a => prices[a.symbol] && prices[a.symbol].c > 0);
 
-  const totalValue = valued.reduce((sum, a) => sum + prices[a.symbol].c * a.qty, 0);
+  const totalValue = valued.reduce((sum, a) => sum + getPriceInCHF(a.symbol, prices[a.symbol].c) * a.qty, 0);
   const totalCost = valued.reduce((sum, a) => sum + a.buyPrice * a.qty, 0);
   const totalPnl = totalValue - totalCost;
   const totalPnlPct = totalCost > 0 ? (totalPnl / totalCost) * 100 : 0;
@@ -1276,7 +1309,8 @@ function updateSummary() {
   }
 
   const perfs = valued.map(a => {
-    const pnlPct = ((prices[a.symbol].c - a.buyPrice) / a.buyPrice) * 100;
+    const currentPrice = getPriceInCHF(a.symbol, prices[a.symbol].c);
+    const pnlPct = ((currentPrice - a.buyPrice) / a.buyPrice) * 100;
     return { symbol: a.symbol, pct: pnlPct };
   });
 
@@ -1298,18 +1332,25 @@ function buildContext() {
 
   const portfolioData = portfolio.map(a => {
     const price = prices[a.symbol];
-    const current = price ? price.c : 'prix non disponible';
-    const pnlPct = price ? (((price.c - a.buyPrice) / a.buyPrice) * 100).toFixed(2) + '%' : 'N/A';
-    return `- ${a.symbol} (${a.name}, ${a.type}): ${a.qty} unités, achat moy. ${a.buyPrice} CHF, prix actuel ${current} CHF, P&L: ${pnlPct}`;
+    const rawPrice = price ? price.c : null;
+    const current = rawPrice ? getPriceInCHF(a.symbol, rawPrice).toFixed(4) + ' CHF' : 'prix non disponible';
+    const currentNum = rawPrice ? getPriceInCHF(a.symbol, rawPrice) : null;
+    const pnlPct = currentNum ? (((currentNum - a.buyPrice) / a.buyPrice) * 100).toFixed(2) + '%' : 'N/A';
+    return `- ${a.symbol} (${a.name}, ${a.type}): ${a.qty} unités, achat moy. ${a.buyPrice} CHF, prix actuel ${current}, P&L: ${pnlPct}`;
   }).join('\n') || 'Portefeuille vide';
 
   const watchData = watchlist.map(a => {
     const price = prices[a.symbol];
-    const current = price ? price.c + ' CHF' : 'prix non disponible';
+    const rawPrice = price ? price.c : null;
+    const current = rawPrice ? getPriceInCHF(a.symbol, rawPrice).toFixed(4) + ' CHF' : 'prix non disponible';
     return `- ${a.symbol} (${a.name}, ${a.type}): prix actuel ${current}, raison: ${a.reason || 'non précisée'}`;
   }).join('\n') || 'Aucun actif sous surveillance';
 
   return `Tu es un conseiller financier personnel expert, parlant français. Voici le contexte complet de l'investisseur:
+
+TAUX DE CHANGE ACTUELS:
+- 1 USD = ${fxRates.USDCHF.toFixed(4)} CHF
+- 1 EUR = ${fxRates.EURCHF.toFixed(4)} CHF
 
 PROFIL INVESTISSEUR:
 - Devise: ${c.currency}
@@ -1522,7 +1563,7 @@ function init() {
   renderPortfolio();
   renderWatchlist();
   renderHistory();
-  refreshPrices();
+  fetchFxRates().then(() => refreshPrices());
 }
 
 init();
