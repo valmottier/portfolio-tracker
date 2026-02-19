@@ -628,7 +628,7 @@
     <button class="nav-tab" onclick="showPage('settings')">Paramètres</button>
   </nav>
   <div class="header-right">
-    <span class="last-update" id="lastUpdate">—</span>
+    <span class="last-update" id="lastUpdate">Chargement des taux…</span>
     <button class="btn btn-outline btn-sm" onclick="refreshPrices()">↻ Actualiser</button>
   </div>
 </header>
@@ -1258,18 +1258,23 @@ async function fetchFxRates() {
     // exchangerate-api.com — gratuit, 1500 requêtes/mois, aucune clé requise pour USD
     const res = await fetch(`https://open.er-api.com/v6/latest/USD`);
     const data = await res.json();
+    console.log('FX data reçu:', data);
 
     if (data.rates) {
       if (data.rates.CHF && data.rates.CHF > 0) fxRates.USDCHF = data.rates.CHF;
       if (data.rates.EUR && data.rates.CHF && data.rates.EUR > 0) {
         fxRates.EURCHF = data.rates.CHF / data.rates.EUR;
       }
+      console.log('Taux mis à jour — USDCHF:', fxRates.USDCHF, 'EURCHF:', fxRates.EURCHF);
+    } else {
+      console.warn('Pas de rates dans la réponse:', data);
     }
 
     document.getElementById('lastUpdate').textContent =
       `1 USD = ${fxRates.USDCHF.toFixed(4)} CHF · Mis à jour ${new Date().toLocaleTimeString('fr-CH', {hour:'2-digit',minute:'2-digit'})}`;
   } catch(e) {
-    console.warn('Impossible de récupérer les taux de change', e);
+    console.error('Erreur taux de change:', e);
+    document.getElementById('lastUpdate').textContent = 'Taux indisponible';
   }
 }
 
@@ -1571,4 +1576,3 @@ init();
 </script>
 </body>
 </html>
-
