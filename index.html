@@ -789,6 +789,21 @@
             <button class="toggle-visibility" onclick="toggleVis('anthropicKey')">👁</button>
           </div>
         </div>
+        <div class="form-group" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <label class="form-label">🔄 Synchronisation multi-appareils</label>
+          <p style="font-size:12px;color:var(--text-secondary);margin-bottom:10px">Renseigne ton BIN ID et ta clé JSONBin pour accéder à tes données depuis tous tes appareils.</p>
+        </div>
+        <div class="form-group">
+          <label class="form-label">JSONBin — BIN ID</label>
+          <input type="text" class="form-input" id="jsonBinId" placeholder="65abc123def456...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">JSONBin — Clé API</label>
+          <div class="api-key-field">
+            <input type="password" class="form-input" id="jsonBinKey" placeholder="$2b$10$abc...">
+            <button class="toggle-visibility" onclick="toggleVis('jsonBinKey')">👁</button>
+          </div>
+        </div>
         <button class="btn btn-primary" onclick="saveKeys()">Sauvegarder les clés</button>
         <div class="save-banner" id="keysBanner">✓ Clés sauvegardées</div>
       </div>
@@ -971,38 +986,69 @@ let watchlist = [];
 let history = [];
 let prices = {};
 let fxRates = { USDCHF: 1, EURCHF: 1 };
+let _config = {};
 
 // ============================================================
-// STOCKAGE PERSISTANT (synchronise sur tous tes appareils)
+// STOCKAGE JSONBIN (synchronise sur tous tes appareils)
 // ============================================================
-async function saveData(key, value) {
-  try {
-    await window.storage.set(key, JSON.stringify(value), false);
-  } catch(e) {
-    console.warn('Erreur sauvegarde:', e);
-  }
+function getJsonBinConfig() {
+  return {
+    binId: localStorage.getItem('jsonBinId') || '',
+    apiKey: localStorage.getItem('jsonBinKey') || ''
+  };
 }
 
-async function loadData(key) {
+async function saveAllData() {
+  const { binId, apiKey } = getJsonBinConfig();
+  if (!binId || !apiKey) {
+    // Fallback localStorage si JSONBin pas configuré
+    localStorage.setItem('portfolio', JSON.stringify(portfolio));
+    localStorage.setItem('watchlist', JSON.stringify(watchlist));
+    localStorage.setItem('aiHistory', JSON.stringify(history));
+    return;
+  }
   try {
-    const result = await window.storage.get(key, false);
-    return result ? JSON.parse(result.value) : null;
+    await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': apiKey
+      },
+      body: JSON.stringify({ portfolio, watchlist, history, config: _config })
+    });
   } catch(e) {
-    return null;
+    console.warn('Erreur sauvegarde JSONBin:', e);
   }
 }
 
 async function loadAllData() {
-  const [p, w, h, c] = await Promise.all([
-    loadData('portfolio'),
-    loadData('watchlist'),
-    loadData('aiHistory'),
-    loadData('config')
-  ]);
-  if (p) portfolio = p;
-  if (w) watchlist = w;
-  if (h) history = h;
-  if (c) _config = c;
+  const { binId, apiKey } = getJsonBinConfig();
+  if (!binId || !apiKey) {
+    // Fallback localStorage
+    const p = localStorage.getItem('portfolio');
+    const w = localStorage.getItem('watchlist');
+    const h = localStorage.getItem('aiHistory');
+    const c = localStorage.getItem('config');
+    if (p) portfolio = JSON.parse(p);
+    if (w) watchlist = JSON.parse(w);
+    if (h) history = JSON.parse(h);
+    if (c) _config = JSON.parse(c);
+    return;
+  }
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+      headers: { 'X-Master-Key': apiKey }
+    });
+    const data = await res.json();
+    if (data.record) {
+      if (data.record.portfolio) portfolio = data.record.portfolio;
+      if (data.record.watchlist) watchlist = data.record.watchlist;
+      if (data.record.history) history = data.record.history;
+      if (data.record.config) _config = data.record.config;
+    }
+  } catch(e) {
+    console.warn('Erreur chargement JSONBin:', e);
+  }
 }
 
 let _config = {};
@@ -1057,32 +1103,35 @@ function loadSettingsForm() {
   document.getElementById('favSectors').value = c.favSectors;
   document.getElementById('avoidSectors').value = c.avoidSectors;
   document.getElementById('stopLoss').value = c.stopLoss;
+  // JSONBin (stocké en localStorage car nécessaire au chargement)
+  document.getElementById('jsonBinId').value = localStorage.getItem('jsonBinId') || '';
+  document.getElementById('jsonBinKey').value = localStorage.getItem('jsonBinKey') || '';
 }
 
 function saveKeys() {
-  const config = getConfig();
-  config.finnhubKey = document.getElementById('finnhubKey').value.trim();
-  config.anthropicKey = document.getElementById('anthropicKey').value.trim();
-  saveData('config', config);
+  _config.finnhubKey = document.getElementById('finnhubKey').value.trim();
+  _config.anthropicKey = document.getElementById('anthropicKey').value.trim();
+  // JSONBin keys stockées en localStorage car nécessaires pour sauvegarder
+  localStorage.setItem('jsonBinId', document.getElementById('jsonBinId').value.trim());
+  localStorage.setItem('jsonBinKey', document.getElementById('jsonBinKey').value.trim());
+  saveAllData();
   showBanner('keysBanner');
   checkSettingsBanner();
 }
 
 function saveProfile() {
-  const config = getConfig();
   ['currency','riskProfile','monthlyBudget','horizon','broker','fixedFees','varFees','fxFees'].forEach(k => {
-    config[k] = document.getElementById(k).value;
+    _config[k] = document.getElementById(k).value;
   });
-  saveData('config', config);
+  saveAllData();
   showBanner('profileBanner');
 }
 
 function saveStrategy() {
-  const config = getConfig();
   ['objective','favSectors','avoidSectors','stopLoss'].forEach(k => {
-    config[k] = document.getElementById(k).value;
+    _config[k] = document.getElementById(k).value;
   });
-  saveData('config', config);
+  saveAllData();
   showBanner('strategyBanner');
 }
 
@@ -1165,7 +1214,7 @@ function removeFromPortfolio(id) {
 }
 
 function savePortfolio() {
-  saveData('portfolio', portfolio);
+  saveAllData();
 }
 
 function renderPortfolio() {
@@ -1238,7 +1287,7 @@ function removeFromWatchlist(id) {
 }
 
 function saveWatchlist() {
-  saveData('watchlist', watchlist);
+  saveAllData();
 }
 
 function renderWatchlist() {
@@ -1573,7 +1622,7 @@ async function askQuestion() {
     // Save to history
     history.unshift({ date: new Date().toLocaleString('fr-CH'), question, answer });
     if (history.length > 10) history.pop();
-    saveData('aiHistory', history);
+    saveAllData();
     renderHistory();
 
   } catch(e) {
@@ -1597,7 +1646,7 @@ function renderHistory() {
 
 function clearHistory() {
   history = [];
-  saveData('aiHistory', history);
+  saveAllData();
   renderHistory();
 }
 
