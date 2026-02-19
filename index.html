@@ -1254,19 +1254,15 @@ async function fetchPricesFor(symbols) {
 }
 
 async function fetchFxRates() {
-  const { finnhubKey } = getConfig();
-  if (!finnhubKey) return;
   try {
-    // Finnhub forex/rates endpoint retourne tous les taux par rapport à USD
-    const res = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${finnhubKey}`);
+    // exchangerate-api.com — gratuit, 1500 requêtes/mois, aucune clé requise pour USD
+    const res = await fetch(`https://open.er-api.com/v6/latest/USD`);
     const data = await res.json();
 
-    if (data.quote) {
-      // data.quote.CHF = combien de CHF pour 1 USD
-      if (data.quote.CHF && data.quote.CHF > 0) fxRates.USDCHF = data.quote.CHF;
-      // Pour EUR/CHF : (CHF par USD) / (EUR par USD) = CHF par EUR
-      if (data.quote.EUR && data.quote.EUR > 0 && data.quote.CHF) {
-        fxRates.EURCHF = data.quote.CHF / data.quote.EUR;
+    if (data.rates) {
+      if (data.rates.CHF && data.rates.CHF > 0) fxRates.USDCHF = data.rates.CHF;
+      if (data.rates.EUR && data.rates.CHF && data.rates.EUR > 0) {
+        fxRates.EURCHF = data.rates.CHF / data.rates.EUR;
       }
     }
 
