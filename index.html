@@ -1257,14 +1257,19 @@ async function fetchFxRates() {
   const { finnhubKey } = getConfig();
   if (!finnhubKey) return;
   try {
-    const [usdchf, eurchf] = await Promise.all([
-      fetch(`https://finnhub.io/api/v1/quote?symbol=OANDA:USD_CHF&token=${finnhubKey}`).then(r => r.json()),
-      fetch(`https://finnhub.io/api/v1/quote?symbol=OANDA:EUR_CHF&token=${finnhubKey}`).then(r => r.json())
-    ]);
-    if (usdchf.c && usdchf.c > 0) fxRates.USDCHF = usdchf.c;
-    if (eurchf.c && eurchf.c > 0) fxRates.EURCHF = eurchf.c;
+    // Finnhub forex/rates endpoint retourne tous les taux par rapport à USD
+    const res = await fetch(`https://finnhub.io/api/v1/forex/rates?base=USD&token=${finnhubKey}`);
+    const data = await res.json();
 
-    // Afficher le taux dans le header
+    if (data.quote) {
+      // data.quote.CHF = combien de CHF pour 1 USD
+      if (data.quote.CHF && data.quote.CHF > 0) fxRates.USDCHF = data.quote.CHF;
+      // Pour EUR/CHF : (CHF par USD) / (EUR par USD) = CHF par EUR
+      if (data.quote.EUR && data.quote.EUR > 0 && data.quote.CHF) {
+        fxRates.EURCHF = data.quote.CHF / data.quote.EUR;
+      }
+    }
+
     document.getElementById('lastUpdate').textContent =
       `1 USD = ${fxRates.USDCHF.toFixed(4)} CHF · Mis à jour ${new Date().toLocaleTimeString('fr-CH', {hour:'2-digit',minute:'2-digit'})}`;
   } catch(e) {
