@@ -74,11 +74,25 @@
   .market-title { font-family: 'Playfair Display', serif; font-size: 17px; font-weight: 700; }
   .market-subtitle { font-size: 12px; opacity: 0.65; margin-top: 3px; }
   .market-body { padding: 18px 22px; }
-  .market-content { font-size: 14px; line-height: 1.8; white-space: pre-wrap; }
+  .market-content { font-size: 14px; line-height: 1.8; }
   .market-content.placeholder { color: var(--text-secondary); font-style: italic; }
+  .market-content strong { font-weight: 700; }
+  .market-content ul { padding-left: 18px; margin: 4px 0 10px; }
+  .market-content li { margin-bottom: 4px; }
+  .market-section-title { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 700; margin: 16px 0 8px; padding-bottom: 5px; border-bottom: 1px solid var(--border); }
+  .market-section-title:first-child { margin-top: 0; }
+  .simple-explain { background: linear-gradient(135deg, #FFF9F0, #FFF3E0); border-left: 3px solid var(--accent); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding: 10px 14px; margin-top: 10px; font-size: 13px; line-height: 1.65; }
+  .simple-explain-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--accent-dark); margin-bottom: 4px; }
   .btn-market { background: rgba(255,255,255,0.15); color: white; border: 1px solid rgba(255,255,255,0.25); padding: 7px 16px; border-radius: 16px; font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
   .btn-market:hover { background: rgba(255,255,255,0.25); }
   .btn-market:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ai-comment { background: #FAFAF7; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; font-size: 13px; line-height: 1.65; color: var(--text); }
+  .ai-comment.placeholder-comment { color: var(--text-secondary); font-style: italic; }
+  .ai-result { background: var(--surface2); border-radius: var(--radius-sm); padding: 18px; font-size: 14px; line-height: 1.8; min-height: 80px; }
+  .ai-result.placeholder { color: var(--text-secondary); font-style: italic; }
+  .ai-result strong { font-weight: 700; }
+  .ai-result ul { padding-left: 18px; margin: 4px 0 10px; }
+  .ai-result li { margin-bottom: 4px; }
 
   /* PORTFOLIO CARDS */
   .asset-card { padding: 16px 22px; border-bottom: 1px solid var(--border); }
@@ -808,7 +822,11 @@ function renderPortfolio() {
           <span class="trend-badge neutral" id="trend-${safeId}">1M —</span>
         </div>
         <div class="ai-comment ${comment ? '' : 'placeholder-comment'}" id="comment-${safeId}">
-          ${comment ? comment.text + (comment.reco ? `<br><span class="ai-reco ${comment.recoClass}">${comment.reco}</span>` : '') : '✦ Clique sur "Analyser tout" pour une recommandation…'}
+          ${comment
+            ? `<div>${formatText(comment.text)}</div>
+               ${comment.simple ? `<div class="simple-explain"><div class="simple-explain-label">💡 En clair pour toi</div>${comment.simple}</div>` : ''}
+               ${comment.reco ? `<span class="ai-reco ${comment.recoClass}">${comment.reco}</span>` : ''}`
+            : '✦ Clique sur "Analyser tout" pour une recommandation…'}
         </div>
       </div>`;
   }).join('');
@@ -889,6 +907,27 @@ function updateSummary() {
 // Variable globale pour stocker le contexte marché utilisé dans l'analyse
 let lastMarketContext = '';
 
+// Convertit le texte brut (avec **gras**, • puces, titres) en HTML lisible
+function formatText(text) {
+  if (!text) return '';
+  return text
+    .split('\n')
+    .map(line => {
+      line = line
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^#{1,3}\s+(.+)/, '<div class="market-section-title">$1</div>')
+        .replace(/^---+$/, '<hr style="border:none;border-top:1px solid var(--border);margin:12px 0">')
+        .replace(/^[•\-\*]\s+(.+)/, '<li>$1</li>')
+        .replace(/^\d+\.\s+(.+)/, '<li>$1</li>');
+      return line;
+    })
+    .join('\n')
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/\n{2,}/g, '</p><p>')
+    .replace(/^(?!<)(.+)$/gm, (m) => m.trim() && !m.startsWith('<') ? `<p>${m}</p>` : m)
+    .replace(/<p><\/p>/g, '');
+}
+
 async function fetchMarketNews(silent = false) {
   const { anthropicKey } = getConfig();
   if (!anthropicKey) { if (!silent) { alert('Clé API Anthropic manquante.'); showPage('settings'); } return ''; }
@@ -904,28 +943,25 @@ async function fetchMarketNews(silent = false) {
 
   const prompt = `Tu es un analyste financier senior et spécialiste en cryptomonnaies. Date: ${new Date().toLocaleDateString('fr-CH')}. Profil investisseur: ${c.riskProfile}.
 
-Génère un briefing marché structuré en français (450 mots max) en DEUX PARTIES DISTINCTES:
+Génère un briefing marché structuré en français (450 mots max). Utilise le format Markdown: **texte** pour les points importants, tirets - pour les listes.
 
----
-📊 MARCHÉS TRADITIONNELS
-• Macro-économie: taux d'intérêt (Fed, BCE), inflation, croissance, emploi — 2-3 points clés avec chiffres si possible
-• Géopolitique: conflits, tensions commerciales, élections — impacts concrets sur les marchés
-• Actions & matières premières: tendances sectorielles, or, pétrole — pertinent pour: ${tradNames || 'marchés généraux'}
-• Signal principal: 1 phrase sur le sentiment général (risk-on / risk-off)
+## 📊 Marchés Traditionnels
+- **Macro-économie**: taux d'intérêt Fed/BCE, inflation, croissance — 2-3 points clés avec chiffres
+- **Géopolitique**: tensions majeures — impacts concrets sur les marchés
+- **Actions & matières premières**: tendances, or, pétrole — pertinent pour: ${tradNames || 'marchés généraux'}
+- **Signal**: sentiment général en une phrase (risk-on ou risk-off)
 
----
-₿ MARCHÉS CRYPTO
-• Sentiment global: Fear & Greed index estimé, dominance BTC, flux institutionnels
-• Actualité réglementaire: nouvelles lois, ETF, exchanges — impact concret
-• Mouvements notables: ${cryptoNames} — tendances, catalyseurs haussiers/baissiers
-• Niveau technique clé si pertinent: support/résistance majeur sur BTC ou ETH
-• Signal principal: 1 phrase sur le momentum crypto actuel
+## ₿ Marchés Crypto
+- **Sentiment**: Fear & Greed estimé, dominance BTC, flux institutionnels
+- **Réglementation**: actualités ETF, régulation — impact concret
+- **Mouvements**: ${cryptoNames} — tendances et catalyseurs
+- **Niveaux clés**: support/résistance majeur BTC ou ETH si pertinent
+- **Signal**: momentum crypto en une phrase
 
----
-⚠️ POINTS DE VIGILANCE CETTE SEMAINE
-2-3 risques ou opportunités spécifiques à surveiller, classés par priorité
+## ⚠️ Points de Vigilance cette Semaine
+2-3 risques ou opportunités prioritaires, classés par importance
 
-Sois direct, factuel, orienté action. Utilise des données récentes de ta connaissance.`;
+Sois direct, factuel, orienté action.`;
 
   try {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -936,7 +972,8 @@ Sois direct, factuel, orienté action. Utilise des données récentes de ta conn
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
     const marketText = data.content[0].text;
-    content.textContent = marketText;
+    content.innerHTML = formatText(marketText);
+    content.classList.remove('placeholder');
     lastMarketContext = marketText;
     return marketText;
   } catch(e) {
@@ -998,7 +1035,8 @@ Réponds UNIQUEMENT en JSON valide, sans texte avant ou après:
   "positions": [
     {
       "symbol": "SYMBOLE",
-      "comment": "2-3 phrases: état de la position + impact spécifique du contexte macro/crypto sur cet actif + perspective d'évolution",
+      "comment": "2-3 phrases: état de la position + impact spécifique du contexte macro/crypto + perspective d'évolution. Utilise **gras** pour les points importants.",
+      "simple": "1-2 phrases en langage simple, sans jargon: ce que ça veut dire concrètement pour moi. Ex: 'En gros, ton Bitcoin profite du retour des grands investisseurs mais reste fragile si les banques centrales durcissent leur politique.'",
       "reco": "ACHETER X CHF" ou "VENDRE X CHF" ou "NE RIEN FAIRE",
       "recoType": "buy" ou "sell" ou "hold"
     }
@@ -1028,7 +1066,7 @@ RÈGLES:
     if (resp.error) throw new Error(resp.error.message);
     let text = resp.content[0].text.trim().replace(/```json|```/g,'').trim();
     const parsed = JSON.parse(text);
-    if (parsed.positions) parsed.positions.forEach(p => { aiComments[p.symbol] = { text: p.comment, reco: p.reco, recoClass: p.recoType }; });
+    if (parsed.positions) parsed.positions.forEach(p => { aiComments[p.symbol] = { text: p.comment, simple: p.simple, reco: p.reco, recoClass: p.recoType }; });
     if (parsed.gems) renderGems(parsed.gems);
     renderPortfolio();
     document.getElementById('lastAnalysis').textContent = 'Analysé à ' + new Date().toLocaleTimeString('fr-CH',{hour:'2-digit',minute:'2-digit'});
@@ -1092,7 +1130,7 @@ async function askQuestion() {
     const data = await res.json();
     if (data.error) throw new Error(data.error.message);
     const answer = data.content[0].text;
-    result.textContent = answer;
+    result.innerHTML = formatText(answer);
     history.unshift({ date: new Date().toLocaleString('fr-CH'), question: q, answer });
     if (history.length > 10) history.pop();
     saveAllData(); renderHistory();
@@ -1103,7 +1141,7 @@ function renderHistory() {
   const list = document.getElementById('historyList'), section = document.getElementById('historySection');
   if (!history.length) { section.style.display = 'none'; return; }
   section.style.display = 'block';
-  list.innerHTML = history.map(h => `<div class="history-item"><div class="h-date">${h.date}</div><div class="h-q">❓ ${h.question}</div><div class="h-a">${h.answer}</div></div>`).join('');
+  list.innerHTML = history.map(h => `<div class="history-item"><div class="h-date">${h.date}</div><div class="h-q">❓ ${h.question}</div><div class="h-a">${formatText(h.answer)}</div></div>`).join('');
 }
 
 function clearHistory() { history = []; saveAllData(); renderHistory(); }
